@@ -1,0 +1,105 @@
+name: Sync crypto snapshot
+
+on:
+  # Gli_Izmir publishes directly. Keep this workflow only as a manual fallback.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest snapshot from Gist
+        shell: bash
+        env:
+          GIST_ID: dc5a9d7e18d664a4c2f27de0d20b4871
+          GIST_FILE: chatgpt_snapshot.json
+        run: |
+          set -euo pipefail
+          mkdir -p crypto-data
+
+          api_tmp="$(mktemp)"
+          snapshot_tmp="$(mktemp)"
+          trap 'rm -f "$api_tmp" "$snapshot_tmp"' EXIT
+
+          cache_bust="$(date +%s)"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'Cache-Control: no-cache' \
+            "https://api.github.com/gists/$GIST_ID?cache_bust=$cache_bust" \
+            -o "$api_tmp"
+
+          raw_url="$(
+            python3 - "$api_tmp" "$GIST_ID" "$GIST_FILE" <<'PY'
+          import json
+          import sys
+          from urllib.parse import urlparse
+
+          api_path, gist_id, filename = sys.argv[1:]
+          with open(api_path, encoding="utf-8") as handle:
+              gist = json.load(handle)
+
+          try:
+              raw_url = gist["files"][filename]["raw_url"]
+          except (KeyError, TypeError):
+              raise SystemExit(f"{filename!r} not found in Gist API response")
+
+          parsed = urlparse(raw_url)
+          parts = parsed.path.strip("/").split("/")
+          expected_prefix = ["anahtarr", gist_id, "raw"]
+
+          if (
+              parsed.scheme != "https"
+              or parsed.netloc != "gist.githubusercontent.com"
+              or parts[:3] != expected_prefix
+              or len(parts) < 5
+              or not parts[3]
+              or parts[-1] != filename
+          ):
+              raise SystemExit(f"unexpected raw_url from Gist API: {raw_url}")
+
+          print(raw_url)
+          PY
+          )"
+
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --header 'Cache-Control: no-cache' \
+            "${raw_url}?cache_bust=$cache_bust" \
+            -o "$snapshot_tmp"
+
+          python3 - "$snapshot_tmp" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          assert data.get("schema_version") == 1, "unexpected schema_version"
+          assert data.get("generated_at"), "generated_at missing"
+          assert data.get("metrics"), "metrics missing"
+          print("snapshot ok:", data["generated_at"])
+          PY
+
+          mv "$snapshot_tmp" crypto-data/chatgpt_snapshot.json
+          echo "Resolved revision URL: $raw_url"
+
+      - name: Commit if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crypto-data/chatgpt_snapshot.json
+          if git diff --cached --quiet; then
+            echo 'No snapshot change.'
+            exit 0
+          fi
+          git commit -m 'chore: sync crypto snapshot'
+          git push
