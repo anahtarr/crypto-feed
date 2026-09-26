@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-26T07:55:49.344269+03:00",
+  "generated_at": "2026-09-26T08:00:49.410840+03:00",
   "source_last_timestamp": "2026-09-26T07:55:02.525358",
   "first_timestamp": "2025-11-22T15:33:03.207906",
   "data_days": 307.68,
@@ -461,14 +461,14 @@
   ],
   "portfolio": {
     "prices": {
-      "jup_usd": 0.346051,
+      "jup_usd": 0.345663,
       "sol_usd": 120.65,
-      "usdt_try": 48.76,
+      "usdt_try": 48.78,
       "usdt_try_source": "binance",
       "coingecko_last_updated_at": {
-        "jup": 1790398460,
-        "sol": 1790398460,
-        "usdt": 1790398460
+        "jup": 1790398770,
+        "sol": 1790398770,
+        "usdt": 1790398770
       }
     }
   }
